@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Spark — Generador de claves (privado)</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: #0f0f10; color: #f1f1f3; padding: 20px; }
+  h1 { font-size: 17px; margin: 0 0 4px; }
+  .muted { color: #a1a1b0; font-size: 12px; }
+  .card { background: #1a1a1e; border: 1px solid #2a2a30; border-radius: 12px; padding: 14px; margin-top: 12px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #a1a1b0; margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; padding: 9px 11px; border-radius: 10px; border: 1px solid #2a2a30; background: #101014; color: #f1f1f3; font-size: 13px; }
+  textarea { font-family: monospace; font-size: 12px; }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  button { padding: 9px 14px; border-radius: 10px; border: 1px solid #2a2a30; background: #232326; color: #f1f1f3; font-weight: 700; cursor: pointer; font-size: 13px; }
+  button.primary { background: #f1f1f3; color: #0f0f10; border-color: #f1f1f3; }
+  button:disabled { opacity: .5; cursor: default; }
+  .ok { background: #052e22; border: 1px solid #059669; color: #a7f3d0; border-radius: 10px; padding: 10px; font-size: 12px; margin-top: 10px; }
+  .err { background: #2a0d0d; border: 1px solid #dc2626; color: #fecaca; border-radius: 10px; padding: 10px; font-size: 12px; margin-top: 10px; }
+  .hist { font-size: 12px; display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #232326; }
+  .mono { font-family: monospace; font-size: 11px; color: #a1a1b0; word-break: break-all; }
+</style>
+</head>
+<body>
+  <h1>🔑 Generador de claves <span class="muted">— privado, no distribuir</span></h1>
+  <div id="keystate" class="muted">Buscando llave privada…</div>
+
+  <div class="card">
+    <label>Código de máquina del comprador</label>
+    <textarea id="code" rows="2" placeholder="UC1-XXXX-XXXX…"></textarea>
+    <div class="row" style="margin-top:10px">
+      <div><label>Revendedor #</label><input id="reseller" type="number" min="0" max="65535" value="1" /></div>
+      <div><label>Días (0 = permanente)</label><input id="days" type="number" min="0" value="0" /></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="gen" style="flex:1">Generar clave</button>
+    </div>
+    <div id="msg"></div>
+    <div id="out" style="display:none">
+      <label>Clave (envíasela al comprador)</label>
+      <textarea id="key" rows="4" readonly></textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="primary" id="copy" style="flex:1">📋 Copiar clave</button>
+      </div>
+      <div id="copied" class="ok" style="display:none">Copiada al portapapeles ✓</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>Historial de esta sesión</label>
+    <div id="hist"><span class="muted">Vacío</span></div>
+  </div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const invoke = (...a) => window.__TAURI__.core.invoke(...a);
+
+  function showMsg(html, cls) {
+    const m = $("msg");
+    m.innerHTML = `<div class="${cls}">${html}</div>`;
+  }
+
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); return true; }
+    catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = t; document.body.appendChild(ta); ta.select();
+        const ok = document.execCommand("copy"); ta.remove();
+        return ok;
+      } catch { return false; }
+    }
+  }
+
+  async function boot() {
+    try {
+      const st = await invoke("lic_status");
+      if (st.has_key) {
+        $("keystate").innerHTML = `Llave cargada ✓ <span class="mono">${st.path || ""}</span>`;
+        return;
+      }
+    } catch {}
+    try {
+      const st = await invoke("lic_load_default");
+      $("keystate").innerHTML = `Llave cargada ✓ <span class="mono">${st.path || ""}</span>`;
+    } catch (e) {
+      $("keystate").innerHTML = `Sin llave: elige tu <b>license-privkey.bin</b> <input type="file" id="keyfile" />`;
+      $("keyfile").addEventListener("change", async (ev) => {
+        const f = ev.target.files[0];
+        if (!f) return;
+        const buf = new Uint8Array(await f.arrayBuffer());
+        try {
+          const st = await invoke("lic_load_bytes", { raw: Array.from(buf), name: f.name });
+          $("keystate").innerHTML = `Llave cargada ✓ <span class="mono">${st.path || ""}</span>`;
+        } catch (err) { showMsg("Privkey inválida: " + err, "err"); }
+      });
+    }
+  }
+
+  const hist = [];
+  function renderHist() {
+    $("hist").innerHTML = hist.length
+      ? hist.map((h, i) => `<div class="hist"><span>R#${h.reseller} · ${h.when}</span><button data-i="${i}">Copiar</button></div>`).join("")
+      : '<span class="muted">Vacío</span>';
+    $("hist").querySelectorAll("button").forEach(b => b.addEventListener("click", async () => {
+      await copyText(hist[Number(b.dataset.i)].key);
+      b.textContent = "✓";
+      setTimeout(() => { b.textContent = "Copiar"; }, 1200);
+    }));
+  }
+
+  $("gen").addEventListener("click", async () => {
+    $("msg").innerHTML = "";
+    $("out").style.display = "none";
+    const code = $("code").value.trim();
+    const reseller = Number($("reseller").value || 0);
+    const days = Number($("days").value || 0);
+    if (!code) { showMsg("Pega el código de máquina primero.", "err"); return; }
+    try {
+      const r = await invoke("lic_make", { code, reseller, days });
+      $("key").value = r.key;
+      $("out").style.display = "block";
+      showMsg(`Clave lista (vence: ${r.expiry}).`, "ok");
+      hist.unshift({ key: r.key, reseller, when: new Date().toLocaleString() });
+      renderHist();
+    } catch (e) { showMsg("Error: " + e, "err"); }
+  });
+
+  $("copy").addEventListener("click", async () => {
+    const ok = await copyText($("key").value);
+    $("copied").style.display = ok ? "block" : "none";
+    if (ok) setTimeout(() => { $("copied").style.display = "none"; }, 2000);
+    else showMsg("No se pudo copiar: selecciónala a mano.", "err");
+  });
+
+  renderHist();
+  boot();
+</script>
+</body>
+</html>

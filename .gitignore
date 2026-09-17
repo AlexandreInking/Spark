@@ -1,0 +1,225 @@
+# =============================================================================
+#  Spark — .gitignore
+#  Objetivo: que al repositorio SOLO suba código fuente.
+#  Nada de credenciales, nada de configuración local, nada de dependencias
+#  ni artefactos de compilación generados.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# 1. CREDENCIALES Y SECRETOS  (la sección más crítica)
+# -----------------------------------------------------------------------------
+
+# Variables de entorno: suelen contener API keys, tokens y contraseñas.
+# Se ignoran todas sus variantes (.env.local, .env.production, .env.*.local…)
+# y se rescatan explícitamente las plantillas, que SÍ deben versionarse.
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+
+# Claves criptográficas y certificados (privados y públicos).
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.crt
+*.cer
+*.der
+*.gpg
+*.asc
+*.asc.bak
+
+# Ficheros con nombres delatorios de secretos.
+*secret*
+*credential*
+secrets.json
+secrets.*
+credentials.json
+credentials.*
+*.token
+*_token.txt
+api-keys.*
+api_keys.*
+
+# Claves de firma de licencias de Spark.
+# license-privkey.bin es la CLAVE PRIVADA PGP con la que se firman las licencias:
+# nunca debe subir al repositorio. La pública (license_pubkey.hex) sí va embebida
+# en la app, así que tampoco hace falta versionarla.
+license-privkey.bin
+*privkey*
+license-privkey.*
+
+# Tokens de registro de npm / yarn / pnpm (contienen auth tokens en claro).
+.npmrc
+.yarnrc
+.yarnrc.yml
+.pnpmrc
+
+# Ficheros de autenticación de servicios y despliegue.
+.netrc
+.docker/config.json
+.firebaserc
+.terraformrc
+*.tfstate
+*.tfstate.*
+.aws/credentials
+.netlify
+.vercel
+
+
+# -----------------------------------------------------------------------------
+# 2. CONFIGURACIÓN LOCAL  (ajustes personales de cada máquina / desarrollador)
+# -----------------------------------------------------------------------------
+
+# Configuración local de Vite / del proyecto.
+*.local
+*.local.*
+vite.config.*.local
+tsconfig.*.local
+
+# Editor: se ignora todo menos las recomendaciones de extensiones, que son
+# útiles para todo el equipo.
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.default.json
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.ntvs*
+*.njsproj
+*.sln
+
+# Sistema operativo.
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+thumbs.db
+desktop.ini
+ehthumbs.db
+
+
+# -----------------------------------------------------------------------------
+# 3. DEPENDENCIAS GENERADAS  (se restauran con npm install / cargo fetch)
+# -----------------------------------------------------------------------------
+
+node_modules/
+jspm_packages/
+web_modules/
+.pnp
+.pnp.js
+
+# Artefactos de compilación de Rust (generados por Cargo).
+**/target/
+target/
+src-tauri/target/
+tools/*/target/
+
+
+# -----------------------------------------------------------------------------
+# 4. ARTEFACTOS DE BUILD / BINARIOS  (se regeneran con npm run build / tauri build)
+# -----------------------------------------------------------------------------
+
+# Frontend compilado por Vite.
+dist/
+dist-ssr/
+build/
+out/
+*.tsbuildinfo
+
+# Instaladores y ejecutables generados (Spark.exe, Instalar Spark.exe, .msi…).
+*.exe
+*.exe.*
+*.msi
+*.msix
+*.app
+*.dmg
+*.deb
+*.rpm
+*.AppImage
+*.apk
+*.aab
+*.wasm
+*.dll
+*.so
+*.dylib
+*.lib
+*.a
+*.o
+*.obj
+*.pdb
+
+# Carpeta histórica de versiones publicadas.
+releases/
+installers/
+portable/
+
+# Esquemas y código generado automáticamente por Tauri.
+src-tauri/gen/
+**/gen/schemas/
+tools/*/gen/
+
+# Otras cachés de build.
+.vite/
+.cache/
+.parcel-cache/
+.rpt2_cache/
+.eslintcache
+.stylelintcache
+coverage/
+*.lcov
+.nyc_output/
+
+
+# -----------------------------------------------------------------------------
+# 5. DATOS LOCALES Y DE EJECUCIÓN  (bases de datos y almacén del usuario)
+# -----------------------------------------------------------------------------
+
+# La app crea estas bases de datos en el equipo del usuario; nunca son código.
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+universecity.db
+*.store
+*.binlog
+*.realm
+
+# Copias de seguridad y volcados.
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+*.tmp
+*.temp
+*~
+dump.sql
+*.sql.gz
+
+
+# -----------------------------------------------------------------------------
+# 6. LOGS Y DIAGNÓSTICO
+# -----------------------------------------------------------------------------
+
+logs/
+log/
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+report.*.json
+*.diagnostic.json
