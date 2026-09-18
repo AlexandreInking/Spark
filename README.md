@@ -201,4 +201,6 @@ SparkSpark/
 
 ## 📝 Licencia
 
-MIT — Usa, modifica, distribuye. Sin garantías. Para uso académico personal.
+© 2026 AlexandreInking — Todos los derechos reservados.
+
+Repositorio público **solo para portafolio**. Prohibido usar, copiar, modificar o distribuir el código sin autorización previa, expresa y por escrito del autor. Ver `LICENSE`.

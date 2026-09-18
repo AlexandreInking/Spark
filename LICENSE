@@ -1,0 +1,28 @@
+Copyright (c) 2026 AlexandreInking. Todos los derechos reservados.
+Copyright (c) 2026 AlexandreInking. All rights reserved.
+
+Este repositorio es PÚBLICO solo con fines de portafolio y demostración.
+This repository is PUBLIC for portfolio and demonstration purposes only.
+
+1. No se concede ningún derecho de uso, copia, modificación, distribución,
+   sublicencia, venta ni creación de obras derivadas.
+   No rights are granted to use, copy, modify, distribute, sublicense,
+   sell, or create derivative works.
+
+2. Queda prohibido clonar este repositorio con fines distintos a su
+   visualización en GitHub, así como descargar, ejecutar, desplegar
+   o reutilizar total o parcialmente este código sin autorización
+   previa, expresa y por escrito del autor.
+   Cloning for any purpose other than viewing on GitHub, and any
+   download, execution, deployment, or reuse of this code in whole
+   or in part without the author's prior, express, written
+   authorization is prohibited.
+
+3. Las dependencias de terceros conservan sus propias licencias
+   (ver package-lock.json / Cargo.lock); esta licencia cubre únicamente
+   el código original de este proyecto.
+   Third-party dependencies keep their own licenses
+   (see package-lock.json / Cargo.lock); this license covers only
+   the original code of this project.
+
+Contacto / Contact: https://github.com/AlexandreInking
