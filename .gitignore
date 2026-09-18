@@ -81,6 +81,12 @@ license-privkey.*
 vite.config.*.local
 tsconfig.*.local
 
+# Estado local del CLI de GitHub (es de la máquina, no del proyecto).
+.gh-config/
+
+# Memoria local del asistente (puede contener datos personales de sesión).
+.workbuddy-ai/
+
 # Editor: se ignora todo menos las recomendaciones de extensiones, que son
 # útiles para todo el equipo.
 .vscode/*
