@@ -1,19 +1,19 @@
 import { useEffect, useState } from "react";
 import Topbar from "../components/layout/Topbar";
-import { Card, Button, Input, Label, Textarea, Select, Badge } from "../components/ui/primitives";
+import { Card, Button, Input, Label, Textarea, Badge } from "../components/ui/primitives";
 import { db } from "../lib/db";
 import { useAuth } from "../stores/useAuth";
 import { useData } from "../stores/useData";
-import { PROVIDERS, SPARKY_SYSTEM, buildContext, chat, diagnoseNetwork, testConnection, type AiProvider, type ChatMsg, type DiagStep } from "../lib/ai";
+import { SPARKY_SYSTEM, buildContext, chat, diagnoseNetwork, testConnection, type ChatMsg, type DiagStep } from "../lib/ai";
 import { Bot, Send, Trash2, PlugZap } from "lucide-react";
 
-// Sparky — chatbot con RAG interno (v1.7.0).
-// Multi-proveedor (OpenAI/Anthropic/OpenRouter/Groq/Google/Ollama). Claves solo en tu PC.
+// Sparky — chatbot 100% local con RAG interno.
+// Solo Ollama (localhost). Sin nube, sin API keys: tus datos no salen de tu PC.
 const QUICK = ["¿Qué tengo esta semana?", "¿Voy a aprobar?", "¿Cómo va mi dinero?", "¿Algún choque de horarios?"];
 
-interface SavedCfg { provider: AiProvider; model: string; keys: Partial<Record<AiProvider, string>>; endpoint: string; }
+interface SavedCfg { model: string; endpoint: string; }
 
-const DEFAULT_CFG: SavedCfg = { provider: "ollama", model: "qwen2.5:3b", keys: {}, endpoint: "http://localhost:11434" };
+const DEFAULT_CFG: SavedCfg = { model: "qwen2.5:3b", endpoint: "http://localhost:11434" };
 
 export default function SparkyPage() {
   const { user } = useAuth();
@@ -31,20 +31,30 @@ export default function SparkyPage() {
   useEffect(() => {
     db.getSetting("ai_cfg").then(raw => {
       if (!raw) return;
-      try { setCfg({ ...DEFAULT_CFG, ...JSON.parse(raw) }); } catch {}
+      try {
+        const old = JSON.parse(raw);
+        // Migra configuraciones antiguas (proveedor nube + keys) a local y
+        // borra cualquier clave que hubiera quedado guardada en este equipo.
+        const next: SavedCfg = {
+          model: typeof old.model === "string" && old.model.trim() ? old.model : DEFAULT_CFG.model,
+          endpoint: typeof old.endpoint === "string" && old.endpoint.trim() ? old.endpoint : DEFAULT_CFG.endpoint,
+        };
+        setCfg(next);
+        if (old.keys !== undefined || old.provider !== undefined || old.apiKey !== undefined) {
+          db.setSetting("ai_cfg", JSON.stringify(next)).catch(() => {});
+        }
+      } catch {}
     }).catch(() => {});
   }, []);
 
   const persist = async (next: SavedCfg) => {
     setCfg(next);
-    try { await db.setSetting("ai_cfg", JSON.stringify({ ...next, keys: next.keys })); } catch {}
+    try { await db.setSetting("ai_cfg", JSON.stringify(next)); } catch {}
   };
-
-  const meta = PROVIDERS.find(p => p.id === cfg.provider)!;
 
   const doTest = async () => {
     setTesting(true); setConn("Probando…");
-    const r = await testConnection({ provider: cfg.provider, model: cfg.model, apiKey: cfg.keys[cfg.provider], endpoint: cfg.endpoint });
+    const r = await testConnection({ provider: "ollama", model: cfg.model, endpoint: cfg.endpoint });
     setTesting(false);
     setConn(r.ok ? "✅ Conectado" : `❌ ${r.error}`);
   };
@@ -76,7 +86,7 @@ export default function SparkyPage() {
         focusMinWeek,
       }, q);
       const answer = await chat(
-        { provider: cfg.provider, model: cfg.model, apiKey: cfg.keys[cfg.provider], endpoint: cfg.endpoint },
+        { provider: "ollama", model: cfg.model, endpoint: cfg.endpoint },
         [{ role: "system", content: `${SPARKY_SYSTEM}\n\nDATOS DEL USUARIO:\n${ctx}` }, ...history]
       );
       setMsgs(h => [...h, { role: "assistant", content: answer }]);
@@ -89,35 +99,24 @@ export default function SparkyPage() {
 
   return (
     <div style={{ flex: 1, overflow: "auto" }}>
-      <Topbar title="Sparky" subtitle="Chat con acceso a tus datos • elige proveedor y modelo barato" actions={
+      <Topbar title="Sparky" subtitle="Chat con acceso a tus datos • 100% local con Ollama" actions={
         <Button size="sm" onClick={() => { setMsgs([]); setErr(""); }}>Limpiar chat</Button>
       } />
       <div style={{ padding: 18, display: "flex", flexDirection: "column", gap: 14, maxWidth: 980 }}>
         <Card>
           <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 8 }}>
             <Bot size={14} style={{ color: "var(--text-muted)" }} />
-            <b style={{ fontSize: 12 }}>Proveedor y modelo</b>
+            <b style={{ fontSize: 12 }}>Modelo local (Ollama)</b>
             {conn && <Badge variant={conn.startsWith("✅") ? "success" : "danger"}>{conn}</Badge>}
           </div>
-          <div className="grid grid-3">
-            <div><Label>Proveedor</Label><Select value={cfg.provider} onChange={e => {
-              const provider = e.target.value as AiProvider;
-              const meta = PROVIDERS.find(p => p.id === provider)!;
-              void persist({ ...cfg, provider, model: cfg.model && cfg.provider !== provider ? cfg.model : meta.modelHint });
-            }}>
-              {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </Select></div>
-            <div><Label>Modelo</Label><Input value={cfg.model} onChange={e => void persist({ ...cfg, model: e.target.value })} placeholder={meta.modelHint} /></div>
-            <div><Label>{meta.needsKey ? "API key (solo tu PC)" : "Endpoint Ollama"}</Label>
-              {meta.needsKey
-                ? <Input type="password" value={cfg.keys[cfg.provider] || ""} onChange={e => void persist({ ...cfg, keys: { ...cfg.keys, [cfg.provider]: e.target.value } })} placeholder="sk-…" />
-                : <Input value={cfg.endpoint} onChange={e => void persist({ ...cfg, endpoint: e.target.value })} placeholder="http://localhost:11434" />}
-            </div>
+          <div className="grid grid-2">
+            <div><Label>Modelo</Label><Input value={cfg.model} onChange={e => void persist({ ...cfg, model: e.target.value })} placeholder="qwen2.5:3b" /></div>
+            <div><Label>Endpoint Ollama</Label><Input value={cfg.endpoint} onChange={e => void persist({ ...cfg, endpoint: e.target.value })} placeholder="http://localhost:11434" /></div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
             <Button size="sm" variant="primary" onClick={doTest} disabled={testing}><PlugZap size={12} /> {testing ? "Probando…" : "Probar conexión"}</Button>
-            <Button size="sm" onClick={async () => { setDiagnosing(true); setDiag(null); setDiag(await diagnoseNetwork({ provider: cfg.provider, model: cfg.model, apiKey: cfg.keys[cfg.provider], endpoint: cfg.endpoint })); setDiagnosing(false); }} disabled={diagnosing}>{diagnosing ? "Diagnosticando…" : "Diagnosticar red"}</Button>
-            <span className="muted small">{meta.note} Las claves se guardan solo en tu equipo.</span>
+            <Button size="sm" onClick={async () => { setDiagnosing(true); setDiag(null); setDiag(await diagnoseNetwork({ provider: "ollama", model: cfg.model, endpoint: cfg.endpoint })); setDiagnosing(false); }} disabled={diagnosing}>{diagnosing ? "Diagnosticando…" : "Diagnosticar"}</Button>
+            <span className="muted small">100% local: requiere <code>ollama serve</code> y un modelo descargado (<code>ollama pull qwen2.5:3b</code>). Sin cuentas, sin claves, tus datos no salen de tu PC.</span>
           </div>
           {diag && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>

@@ -1,56 +1,25 @@
 import { describe, it, expect } from "vitest";
-import { buildContext, buildRequest, cleanKey, detectIntent, parseResponse } from "./ai";
+import { buildContext, buildRequest, detectIntent, parseResponse } from "./ai";
 import type { RagInput } from "./ai";
 
-describe("ai providers (v1.7.0, sin red)", () => {
+describe("ai local (sin red, sin claves)", () => {
   const msgs = [{ role: "user" as const, content: "hola" }];
-  it("openai-compatible: url + bearer", () => {
-    const r = buildRequest({ provider: "groq", model: "m", apiKey: "k" }, msgs);
-    expect(r.kind).toBe("openai");
-    expect(r.url).toContain("groq.com");
-    expect((r.init.headers as any).Authorization).toBe("Bearer k");
-  });
-  it("openrouter agrega referer", () => {
-    const r = buildRequest({ provider: "openrouter", model: "x/y", apiKey: "k" }, msgs);
-    expect((r.init.headers as any)["HTTP-Referer"]).toBeTruthy();
-  });
-  it("sin key lanza (nube)", () => {
-    expect(() => buildRequest({ provider: "openai", model: "m" }, msgs)).toThrow("API key");
-  });
-  it("cleanKey quita Bearer y espacios", () => {
-    expect(cleanKey("  Bearer sk-abc  ")).toBe("sk-abc");
-    expect(cleanKey("sk-abc")).toBe("sk-abc");
-    expect(cleanKey(undefined)).toBe("");
-  });
   it("sin modelo lanza", () => {
     expect(() => buildRequest({ provider: "ollama", model: " " }, msgs)).toThrow("modelo");
   });
-  it("anthropic: headers y system separado", () => {
-    const r = buildRequest({ provider: "anthropic", model: "h", apiKey: "k" },
-      [{ role: "system", content: "s" }, ...msgs]);
-    expect(r.url).toContain("anthropic.com");
-    const b = JSON.parse(r.init.body as string);
-    expect(b.system).toBe("s");
-    expect(b.max_tokens).toBeGreaterThan(0);
-  });
-  it("google: key en query y roles user/model", () => {
-    const r = buildRequest({ provider: "google", model: "gemma", apiKey: "k" },
-      [...msgs, { role: "assistant" as const, content: "a" }]);
-    expect(r.url).toContain("key=k");
-    const b = JSON.parse(r.init.body as string);
-    expect(b.contents[1].role).toBe("model");
+  it("ollama: apunta a /api/chat sin headers de auth", () => {
+    const r = buildRequest({ provider: "ollama", model: "qwen2.5:3b" }, msgs);
+    expect(r.kind).toBe("ollama");
+    expect(r.url).toContain("/api/chat");
+    expect((r.init.headers as any).Authorization).toBeUndefined();
   });
   it("ollama sin key y con endpoint custom", () => {
     const r = buildRequest({ provider: "ollama", model: "qwen", endpoint: "http://x:11434/" }, msgs);
     expect(r.url).toBe("http://x:11434/api/chat");
   });
-  it("parse por kind", () => {
-    expect(parseResponse("openai", { choices: [{ message: { content: " ok " } }] })).toBe("ok");
-    expect(parseResponse("anthropic", { content: [{ text: "a" }] })).toBe("a");
-    expect(parseResponse("google", { candidates: [{ content: { parts: [{ text: "g" }] } }] })).toBe("g");
-    expect(parseResponse("ollama", { message: { content: "o" } })).toBe("o");
-    expect(() => parseResponse("openai", {})).toThrow();
-    expect(() => parseResponse("openai", { error: { message: "bad key" } })).toThrow("bad key");
+  it("parse ollama", () => {
+    expect(parseResponse("ollama", { message: { content: " ok " } })).toBe("ok");
+    expect(() => parseResponse("ollama", {})).toThrow();
   });
 });
 

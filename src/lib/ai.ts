@@ -1,28 +1,23 @@
-// Sparky — chatbot multi-proveedor con RAG interno (v1.7.0).
-// Proveedores: OpenAI, Anthropic, OpenRouter, Groq, Google (nube, con tu clave)
-// + Ollama local (sin clave). Sin dependencias: fetch directo, 3 shapes de API.
-// Las claves viven en settings locales (tu PC) y nunca se registran en logs.
+// Sparky — chatbot 100% local con RAG interno.
+// Solo Ollama local (http://localhost:11434). Sin nube, sin API keys:
+// tus datos nunca salen de tu PC. Sin dependencias: fetch directo.
+// Las configuraciones antiguas con proveedores de nube se migran a Ollama
+// y cualquier clave guardada se elimina (ver Sparky.tsx).
 
 import type { Course, Debt, Deliverable, GeneralReminder, JobOffer, MoneyTransaction } from "../types";
 
-export type AiProvider = "openai" | "anthropic" | "openrouter" | "groq" | "google" | "ollama";
+export type AiProvider = "ollama";
 
 export interface AiConfig {
   provider: AiProvider;
   model: string;
-  apiKey?: string;
   endpoint?: string; // override (Ollama local por defecto)
 }
 
 export interface ChatMsg { role: "user" | "assistant" | "system"; content: string; }
 
-export const PROVIDERS: { id: AiProvider; label: string; needsKey: boolean; modelHint: string; note: string }[] = [
-  { id: "ollama", label: "Ollama (local, gratis)", needsKey: false, modelHint: "qwen2.5:3b", note: "Requiere ollama serve. Cero costo." },
-  { id: "groq", label: "Groq", needsKey: true, modelHint: "llama-3.1-8b-instant", note: "Muy barato/rápido. Ideal diario." },
-  { id: "google", label: "Google", needsKey: true, modelHint: "gemma-3-4b-it", note: "Gemma/Flash: los más baratos." },
-  { id: "openrouter", label: "OpenRouter", needsKey: true, modelHint: "google/gemma-3-4b-it", note: "Un key, cientos de modelos baratos." },
-  { id: "openai", label: "OpenAI", needsKey: true, modelHint: "gpt-4o-mini", note: "Usa minis para costo bajo." },
-  { id: "anthropic", label: "Anthropic", needsKey: true, modelHint: "claude-3-5-haiku-latest", note: "Haiku para costo bajo." },
+export const PROVIDERS: { id: AiProvider; label: string; modelHint: string; note: string }[] = [
+  { id: "ollama", label: "Ollama (local)", modelHint: "qwen2.5:3b", note: "Requiere ollama serve. 100% local, cero costo, sin claves." },
 ];
 
 const OLLAMA_EP = "http://localhost:11434";
@@ -34,7 +29,7 @@ function cleanEp(ep?: string, fb = ""): string {
 
 // ---------- constructores puros (testeables, sin red) ----------
 
-export interface BuiltRequest { url: string; init: RequestInit; kind: "openai" | "anthropic" | "google" | "ollama"; }
+export interface BuiltRequest { url: string; init: RequestInit; kind: "ollama"; }
 
 export function buildRequest(cfg: AiConfig, messages: ChatMsg[]): BuiltRequest {
   const model = cfg.model.trim();
@@ -43,93 +38,27 @@ export function buildRequest(cfg: AiConfig, messages: ChatMsg[]): BuiltRequest {
   const convo = messages.filter(m => m.role !== "system").map(m => ({ role: m.role, content: m.content }));
   const sysText = sys.map(m => m.content).join("\n");
 
-  if (cfg.provider === "anthropic") {
-    if (!cfg.apiKey?.trim()) throw new Error("Falta API key de Anthropic");
-    return {
-      kind: "anthropic",
-      url: "https://api.anthropic.com/v1/messages",
-      init: {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": cleanKey(cfg.apiKey), "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" },
-        body: JSON.stringify({ model, max_tokens: 1024, system: sysText || undefined, messages: convo }),
-      },
-    };
-  }
-  if (cfg.provider === "google") {
-    if (!cfg.apiKey?.trim()) throw new Error("Falta API key de Google");
-    const base = cleanEp(cfg.endpoint, "https://generativelanguage.googleapis.com");
-    const contents = convo.map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
-    return {
-      kind: "google",
-      url: `${base}/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(cleanKey(cfg.apiKey))}`,
-      init: {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: sysText ? { parts: [{ text: sysText }] } : undefined,
-          contents,
-          generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
-        }),
-      },
-    };
-  }
-  if (cfg.provider === "ollama") {
-    const base = cleanEp(cfg.endpoint, OLLAMA_EP);
-    return {
-      kind: "ollama",
-      url: `${base}/api/chat`,
-      init: {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model, messages: sysText ? [{ role: "system", content: sysText }, ...convo] : convo, stream: false }),
-      },
-    };
-  }
-  // OpenAI / OpenRouter / Groq: shape compatible (aquí siempre requieren key)
-  if (!cfg.apiKey?.trim()) throw new Error("Falta API key");
-  const bases: Record<string, string> = {
-    openai: "https://api.openai.com",
-    openrouter: "https://openrouter.ai",
-    groq: "https://api.groq.com/openai",
-  };
-  const base = cleanEp(cfg.endpoint, bases[cfg.provider]);
-  const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${cleanKey(cfg.apiKey)}` };
-  if (cfg.provider === "openrouter") {
-    headers["HTTP-Referer"] = "https://spark.local";
-    headers["X-Title"] = "Spark";
-  }
+  const base = cleanEp(cfg.endpoint, OLLAMA_EP);
   return {
-    kind: "openai",
-    url: `${base}/v1/chat/completions`,
-    init: { method: "POST", headers, body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 1024 }) },
+    kind: "ollama",
+    url: `${base}/api/chat`,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: sysText ? [{ role: "system", content: sysText }, ...convo] : convo, stream: false }),
+    },
   };
 }
 
 export function parseResponse(kind: BuiltRequest["kind"], json: any): string {
   try {
-    if (kind === "anthropic") {
-      const t = json?.content?.map((b: any) => b?.text || "").join("") || "";
-      if (t.trim()) return t.trim();
-    } else if (kind === "google") {
-      const t = json?.candidates?.[0]?.content?.parts?.map((p: any) => p?.text || "").join("") || "";
-      if (t.trim()) return t.trim();
-    } else if (kind === "ollama") {
-      const t = json?.message?.content || "";
-      if (t.trim()) return t.trim();
-    } else {
-      const t = json?.choices?.[0]?.message?.content || "";
-      if (t.trim()) return t.trim();
-      if (json?.error?.message) throw new Error(json.error.message);
-    }
+    void kind;
+    const t = json?.message?.content || "";
+    if (t.trim()) return t.trim();
   } catch (e: any) {
     if (e?.message && !e.message.startsWith("Respuesta vacía")) throw e;
   }
   throw new Error("Respuesta vacía del modelo");
-}
-
-/** Limpia keys pegadas con "Bearer " o espacios. */
-export function cleanKey(k?: string): string {
-  return (k || "").trim().replace(/^bearer\s+/i, "");
 }
 
 async function fetchTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
@@ -180,19 +109,11 @@ async function smartFetch(url: string, init: RequestInit, ms: number): Promise<R
   }
 }
 
-function netError(e: any, provider: AiProvider): Error {
-  if (e?.name === "AbortError") return new Error("Se agotó el tiempo esperando respuesta (¿internet lento?). Intenta de nuevo.");
-  if (typeof navigator !== "undefined" && navigator.onLine === false) {
-    return new Error("Sin internet en este equipo. Conéctate e intenta de nuevo.");
-  }
+function netError(e: any): Error {
+  if (e?.name === "AbortError") return new Error("Se agotó el tiempo esperando a Ollama. ¿Modelo descargado (ollama pull)? Intenta de nuevo.");
   const cause = String(e?.message ?? "").slice(0, 150);
   const suffix = cause ? ` Detalle: ${cause}` : "";
-  if (provider === "ollama") return new Error(`Ollama no responde. ¿ollama serve en marcha?${suffix}`);
-  return new Error(
-    "No se pudo conectar (Failed to fetch). Revisa: 1) tu internet, 2) que el firewall/antivirus de Windows permita a Spark, " +
-    "3) VPN activa, 4) si estás en red de universidad/trabajo con proxy, la app no usa proxy del sistema." +
-    suffix
-  );
+  return new Error(`Ollama no responde. ¿ollama serve en marcha?${suffix}`);
 }
 
 /** Chat con fallback Ollama legacy (/api/generate) si /api/chat no existe. */
@@ -202,7 +123,7 @@ export async function chat(cfg: AiConfig, messages: ChatMsg[]): Promise<string> 
   try {
     res = await smartFetch(built.url, built.init, 45000);
   } catch (e: any) {
-    throw netError(e, cfg.provider);
+    throw netError(e);
   }
   if (!res.ok && cfg.provider === "ollama" && res.status === 404) {
     // Ollama viejo: endpoint generate con prompt plano
@@ -227,12 +148,8 @@ export async function chat(cfg: AiConfig, messages: ChatMsg[]): Promise<string> 
 
 export async function testConnection(cfg: AiConfig): Promise<{ ok: boolean; error?: string }> {
   try {
-    if (cfg.provider === "ollama") {
-      const r = await smartFetch(`${cleanEp(cfg.endpoint, OLLAMA_EP)}/api/tags`, {}, 10000);
-      if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
-      return { ok: true };
-    }
-    await chat(cfg, [{ role: "user", content: "Responde solo: ok" }]);
+    const r = await smartFetch(`${cleanEp(cfg.endpoint, OLLAMA_EP)}/api/tags`, {}, 10000);
+    if (!r.ok) return { ok: false, error: `HTTP ${r.status}` };
     return { ok: true };
   } catch (e: any) {
     return { ok: false, error: e?.message || "fallo" };
@@ -242,53 +159,20 @@ export async function testConnection(cfg: AiConfig): Promise<{ ok: boolean; erro
 export interface DiagStep { name: string; ok: boolean; detail: string; }
 
 /**
- * Diagnóstico por capas: 1) internet, 2) servidor del proveedor (+key),
- * 3) petición real mínima. Aísla dónde muere la conexión.
+ * Diagnóstico local: 1) servidor Ollama, 2) petición real mínima.
+ * Todo es localhost: no requiere internet ni claves.
  */
 export async function diagnoseNetwork(cfg: AiConfig): Promise<DiagStep[]> {
   const steps: DiagStep[] = [];
-  // 1) internet básico
-  const endpoints = ["https://www.google.com/generate_204", "https://cloudflare.com/cdn-cgi/trace"];
-  let worked = "";
-  for (const ep of endpoints) {
-    try {
-      const r = await smartFetch(ep, { method: "GET" }, 8000);
-      if (r.ok || r.status === 204) { worked = ep; break; }
-    } catch { /* prueba siguiente */ }
-  }
-  if (worked) {
-    steps.push({ name: "Internet", ok: true, detail: `Hay salida a internet desde la app (${worked}).` });
-  } else {
-    steps.push({ name: "Internet", ok: false, detail: "Sin salida a internet: revisa Wi-Fi/cable y que Windows permita a Spark." });
-    return steps;
-  }
-  // 2) servidor del proveedor (listado liviano; 401 = llegamos, key mala)
+  // 1) servidor Ollama
   try {
-    if (cfg.provider === "ollama") {
-      const r = await smartFetch(`${cleanEp(cfg.endpoint, OLLAMA_EP)}/api/tags`, {}, 8000);
-      steps.push(r.ok
-        ? { name: "Servidor Ollama", ok: true, detail: "Ollama responde." }
-        : { name: "Servidor Ollama", ok: false, detail: `Ollama devolvió HTTP ${r.status}. ¿Modelo descargado (ollama pull)?` });
-    } else if (cfg.provider === "anthropic") {
-      steps.push({ name: "Servidor Anthropic", ok: true, detail: "Omitido (Anthropic no expone lista pública); se prueba directo." });
-    } else {
-      const key = cleanKey(cfg.apiKey);
-      let url = "";
-      if (cfg.provider === "google") url = `${cleanEp(cfg.endpoint, "https://generativelanguage.googleapis.com")}/v1beta/models?key=${encodeURIComponent(key)}`;
-      else {
-        const bases: Record<string, string> = {
-          openai: "https://api.openai.com", openrouter: "https://openrouter.ai", groq: "https://api.groq.com/openai",
-        };
-        url = `${cleanEp(cfg.endpoint, bases[cfg.provider])}/v1/models`;
-      }
-      const headers: Record<string, string> = cfg.provider === "google" ? {} : { Authorization: `Bearer ${key}` };
-      const r = await smartFetch(url, { method: "GET", headers }, 10000);
-      if (r.ok) steps.push({ name: "Servidor del proveedor", ok: true, detail: "El servidor responde y acepta la key." });
-      else if (r.status === 401 || r.status === 403) steps.push({ name: "Servidor del proveedor", ok: true, detail: `Llegamos al servidor (HTTP ${r.status}): la conexión funciona, pero la key fue rechazada. Revísala.` });
-      else steps.push({ name: "Servidor del proveedor", ok: false, detail: `El servidor devolvió HTTP ${r.status}.` });
-    }
+    const r = await smartFetch(`${cleanEp(cfg.endpoint, OLLAMA_EP)}/api/tags`, {}, 8000);
+    steps.push(r.ok
+      ? { name: "Servidor Ollama", ok: true, detail: "Ollama responde en este equipo." }
+      : { name: "Servidor Ollama", ok: false, detail: `Ollama devolvió HTTP ${r.status}. ¿Modelo descargado (ollama pull)?` });
+    if (!r.ok) return steps;
   } catch {
-    steps.push({ name: "Servidor del proveedor", ok: false, detail: "No responde: firewall/antivirus bloqueando a Spark, VPN o proxy de tu red." });
+    steps.push({ name: "Servidor Ollama", ok: false, detail: "No responde: ¿ollama serve en marcha? Revisa endpoint y firewall local." });
     return steps;
   }
   // 3) petición real mínima
